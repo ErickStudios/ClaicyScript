@@ -45,15 +45,15 @@ function createEnum(name: CSPropertyNameType, allowedValues: CSBaseAllValues[]):
         }
     };
 }
-function errorAtCls(name: CSPropertyNameType, msg: CSString, before="") {
+function errorAtCls(name: CSPropertyNameType, msg: CSString, before = "") {
     return `at \x1b[38;5;161mclass\x1b[0m \x1b[38;5;194m${name}\x1b[0m: (${before}${msg})`
 }
 export function tokenize(code: string) {
     const tokens = [];
     let i = 0;
 
-    const isLetter = (c:string) => /[a-zA-Z_]/.test(c);
-    const isNumber = (c:string) => /[0-9]/.test(c);
+    const isLetter = (c: string) => /[a-zA-Z_]/.test(c);
+    const isNumber = (c: string) => /[0-9]/.test(c);
 
     while (i < code.length) {
         let c = code[i];
@@ -106,7 +106,7 @@ export function tokenize(code: string) {
 
     return tokens;
 }
-export function parse(tokens: ({type: string;value: string;} | {type: string;value: number;})[]) {
+export function parse(tokens: ({ type: string; value: string; } | { type: string; value: number; })[]) {
     let i = 0;
 
     function peek(): any {
@@ -123,12 +123,12 @@ export function parse(tokens: ({type: string;value: string;} | {type: string;val
             throw new Error("Expected " + value);
         }
     }
-    function parseFunction():  ({
-            type: string,
-            name: string,
-            params: any[],
-            body: any[]
-        }) {
+    function parseFunction(): ({
+        type: string,
+        name: string,
+        params: any[],
+        body: any[]
+    }) {
         consume(); // function
 
         let name = consume().value;
@@ -162,7 +162,7 @@ export function parse(tokens: ({type: string;value: string;} | {type: string;val
         };
     }
     function parseExpression() {
-        let left = parsePrimary();        
+        let left = parsePrimary();
 
         while (peek() && ["==", ">", "<"].includes(peek().value)) {
             let op = consume().value;
@@ -217,7 +217,7 @@ export function parse(tokens: ({type: string;value: string;} | {type: string;val
             elseBody
         };
     }
-    function parsePrimary() : any {
+    function parsePrimary(): any {
         let token = consume();
 
         let node;
@@ -342,18 +342,18 @@ export function parse(tokens: ({type: string;value: string;} | {type: string;val
 
     return ast;
 }
-export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne:boolean=false): Promise<CSObjectPropertys | ({evalExpr: Function, recursiveInterprete: Function})> {
+export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne: boolean = false): Promise<CSObjectPropertys | ({ evalExpr: Function, recursiveInterprete: Function })> {
     let scopea = {};
     let globalSymbols = globalSymbolsP;
 
     if (makeOne) {
-        return {evalExpr, recursiveInterprete};
+        return { evalExpr, recursiveInterprete };
     }
 
-    async function evalExpr(node: any, currentScope:any = scopea, mak=false):Promise<CSBaseAllValues> {
+    async function evalExpr(node: any, currentScope: any = scopea, mak = false): Promise<CSBaseAllValues> {
         if (node.type === "BinaryOp") {
-            let left:any = await evalExpr(node.left, currentScope);
-            let right:any = await evalExpr(node.right, currentScope);
+            let left: any = await evalExpr(node.left, currentScope);
+            let right: any = await evalExpr(node.right, currentScope);
 
             switch (node.operator) {
                 case "==": return left == right;
@@ -399,7 +399,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
             }
 
             if (!(typeof callee === 'object' && 'type' in callee)) throw new Error("no callable function");
-            
+
             if (callee.type === 'userFunc') {
                 if (!('params' in callee && Array.isArray(callee.params))) throw new Error("no callable function");
                 let localScope: Record<string, CSBaseAllValues> = {};
@@ -434,8 +434,8 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
         return Boolean();
     }
 
-    async function recursiveInterprete(body:any, scope:CSObjectPropertys=scopea, globalSymbolsX=globalSymbols) {
-        globalSymbols=globalSymbolsX;
+    async function recursiveInterprete(body: any, scope: CSObjectPropertys = scopea, globalSymbolsX = globalSymbols) {
+        globalSymbols = globalSymbolsX;
 
         for (let stmt of body) {
             if (stmt.type === "ExprStmt") await evalExpr(stmt.expr, scope);
@@ -449,7 +449,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                     await recursiveInterprete(stmt.elseBody, scope);
                 }
             }
-            
+
             if (stmt.type === "FunctionDecl") {
                 scope[stmt.name] = {
                     type: "userFunc",
@@ -489,7 +489,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
 
     return scopea;
 }
-export function exportLibrary(isGlobal=false) {
+export function exportLibrary(isGlobal = false) {
     /**
 ```
 var true: (extern 'js').boolean;
@@ -538,101 +538,143 @@ func undef(name: String);
     globalSymbols.errorAtCls = errorAtCls;
     globalSymbols.true = true;
     globalSymbols.false = false;
-    globalSymbols.Array = {type: 'func', func: (params: CSFunctionCallbackParams) => ({
+    globalSymbols.Array = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => ({
             type: 'array',
             items: params
-    })};
-    globalSymbols.InternalDocsStrictEnum = {type: 'func',func: (params: CSFunctionCallbackParams) => {
-        if (typeof params[0] !== 'string')
-            throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
-        let enumName = params[0];
-        if (!CSTypeChecker.isCSArray(params[1]))
-            throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
-        let allowedValues = params[1].items;
+        })
+    };
+    globalSymbols.InternalDocsStrictEnum = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            if (typeof params[0] !== 'string')
+                throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
+            let enumName = params[0];
+            if (!CSTypeChecker.isCSArray(params[1]))
+                throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
+            let allowedValues = params[1].items;
 
-        return createEnum(enumName, allowedValues);
-    }};
-    globalSymbols.Boolean = createEnum('Boolean', [true,false]);
+            return createEnum(enumName, allowedValues);
+        }
+    };
+    globalSymbols.Boolean = createEnum('Boolean', [true, false]);
     globalSymbols.print = {
         type: 'func', func: (params: CSFunctionCallbackParams) => {
             console.log(...params)
         }
     };
-    globalSymbols.Math = {type: "obj", object: {
-            add: { type: 'func', func: (params: CSFunctionCallbackParams) => {
-                const a = params[0];
-                const b = params[1];
+    globalSymbols.Math = {
+        type: "obj", object: {
+            add: {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    const a = params[0];
+                    const b = params[1];
 
-                if (typeof a === 'number' && typeof b === 'number') {
-                    return a + b;
+                    if (typeof a === 'number' && typeof b === 'number') {
+                        return a + b;
+                    }
+
+                    if (typeof a === 'string' && typeof b === 'string') {
+                        return a + b;
+                    }
+
+                    throw new TypeError("Math.add expects number or string");
                 }
+            },
+            sub: {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    const a = params[0];
+                    const b = params[1];
 
-                if (typeof a === 'string' && typeof b === 'string') {
-                    return a + b;
+                    if (typeof a === 'number' && typeof b === 'number') {
+                        return a - b;
+                    }
+
+                    throw new TypeError("Math.sub expects number");
                 }
+            },
+            div: {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    const a = params[0];
+                    const b = params[1];
 
-                throw new TypeError("Math.add expects number or string");
-            } },
-            sub: { type: 'func', func: (params: CSFunctionCallbackParams) => {
-                const a = params[0];
-                const b = params[1];
+                    if (typeof a === 'number' && typeof b === 'number') {
+                        return a / b;
+                    }
 
-                if (typeof a === 'number' && typeof b === 'number') {
-                    return a - b;
+                    throw new TypeError("Math.div expects number");
                 }
+            },
+            mul: {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    const a = params[0];
+                    const b = params[1];
 
-                throw new TypeError("Math.sub expects number");
-            } },
-            div: { type: 'func', func: (params: CSFunctionCallbackParams) => {
-                const a = params[0];
-                const b = params[1];
+                    if (typeof a === 'number' && typeof b === 'number') {
+                        return a * b;
+                    }
 
-                if (typeof a === 'number' && typeof b === 'number') {
-                    return a / b;
+                    throw new TypeError("Math.mul expects number");
                 }
-
-                throw new TypeError("Math.div expects number");
-            } },
-            mul: { type: 'func', func: (params: CSFunctionCallbackParams) => {
-                const a = params[0];
-                const b = params[1];
-
-                if (typeof a === 'number' && typeof b === 'number') {
-                    return a * b;
-                }
-
-                throw new TypeError("Math.mul expects number");
-            } },
+            },
         }
     };
-    globalSymbols.String = {type: 'func', func: (params: CSFunctionCallbackParams) => {
-        return String(params[0]);
-    }}
-    globalSymbols.exportToGlobal = { type: 'func', func: (params: CSFunctionCallbackParams) => {
-        let exportAs = params[0];
-        let exportValue = params[1];
-        if (typeof exportAs !== 'string') 
-            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-        globalSymbols[exportAs] = exportValue;
-    }}
-    globalSymbols.notDefined = { type: 'func', func: (params: CSFunctionCallbackParams) => {
-        if (typeof params[0] !== 'string') 
-            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+    globalSymbols.String = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            return String(params[0]);
+        }
+    }
+    globalSymbols.exportToGlobal = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            let exportAs = params[0];
+            let exportValue = params[1];
+            if (typeof exportAs !== 'string')
+                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+            globalSymbols[exportAs] = exportValue;
+        }
+    }
+    globalSymbols.notDefined = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            if (typeof params[0] !== 'string')
+                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
 
-        let exportAs = params[0];
-        return !(exportAs in globalSymbols);
-    }}
-    globalSymbols.undef = { type: 'func', func: (params: CSFunctionCallbackParams) => {
-        if (typeof params[0] !== 'string') 
-            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-        delete globalSymbols[params[0]];
-    }}
-    globalSymbols.getVar = { type: 'func', func: (params: CSFunctionCallbackParams) => {
-        let exportAs = params[0];
-        if (typeof exportAs !== 'string') 
-            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-        return globalSymbols[exportAs];
-    }}
+            let exportAs = params[0];
+            return !(exportAs in globalSymbols);
+        }
+    }
+    globalSymbols.undef = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            if (typeof params[0] !== 'string')
+                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+            delete globalSymbols[params[0]];
+        }
+    }
+    globalSymbols.getVar = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            let exportAs = params[0];
+            if (typeof exportAs !== 'string')
+                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+            return globalSymbols[exportAs];
+        }
+    }
+    globalSymbols.Object = {
+        type: 'func', func: (params: CSFunctionCallbackParams) => {
+            let object: CSObject = {type:'obj', object:{}};
+            // package
+            object.object.set = {type: 'func', func: (params: CSFunctionCallbackParams) => {
+                // packageSet
+                if (typeof params[0] !== 'string') throw new Error("Not allowed");
+                object.object[params[0]] = params[1];
+                return true;
+            }};
+            // package
+            object.object.get = {type: 'func', func: (params: CSFunctionCallbackParams) => {
+                // packageGet
+                if (typeof params[0] !== 'string') throw new Error("Not allowed");
+                return object.object[params[0]];
+            }};
+            return object;
+        }
+    }
 
     return globalSymbols;
 }

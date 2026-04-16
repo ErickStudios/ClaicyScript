@@ -1,2 +1,2 @@
 tsc
-esbuild ClaicyScriptCompiled/LibraryClaicyScript.js --bundle --platform=node --format=cjs --outfile=ClaicyScriptCompiled/ClaicyScriptPacked.js
+esbuild ClaicyScriptCompiled/LibraryClaicyScript.js --bundle --format=esm --outfile=ClaicyScriptCompiled/ClaicyScriptPacked.js
