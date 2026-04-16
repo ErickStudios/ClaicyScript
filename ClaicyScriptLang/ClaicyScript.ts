@@ -1,34 +1,5 @@
 /** ClaicyScript interpreter v1.0 */
-type CSNumber = number; // numbers
-type CSString = string; // strings
-type CSBoolean = boolean; // boolean
-type CSPropertyNameType = CSString; // nameof propertys
-type CSBaseAllValues = CSFunction | CSValue | CSObject | CSArray | CSUserFunction | CSNumber | CSString | CSBoolean | CSPropertyNameType; // all possible values in the lang
-type CSObjectPropertys = { [key: CSPropertyNameType]: CSBaseAllValues }; // base of the scopes and objects
-type CSArrayInternalItems = CSBaseAllValues[]; // array items
-type CSFunctionCallbackParams = CSArrayInternalItems; // function params
-type CSFunctionCallback = (params: CSFunctionCallbackParams) => CSBaseAllValues; // function
-/** The abstract basis of everything typed, all the dynamic possibilities are here */
-interface CSValue {
-    type: CSString;
-};
-/** a function callable from the internal lang engine to the user code */
-interface CSFunction extends CSValue {
-    func: CSFunctionCallback;
-}
-/** a object, a dictionary that contains whatever that you want */
-interface CSObject extends CSValue {
-    object: CSObjectPropertys;
-}
-/** a array, a list of enumerable things, from index start 0. 0... 1... 2... to the infinity */
-interface CSArray extends CSValue {
-    items: CSArrayInternalItems;
-}
-/** a user function, a function defined by the user */
-interface CSUserFunction extends CSValue {
-    params: string[],
-    body: any
-}
+import { CSPropertyNameType, CSBaseAllValues, CSArray, CSObject, CSFunction, CSString, CSObjectPropertys, CSFunctionCallbackParams } from "./typesDefinitions/buildings"
 /** a member node, a access to node */
 type MemberNode = {
     type: "Member";
