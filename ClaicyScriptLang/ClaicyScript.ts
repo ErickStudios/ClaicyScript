@@ -6,6 +6,12 @@ type MemberNode = {
     object: any;
     property: string;
 };
+class ReturnException {
+    value: any;
+    constructor(value: any) {
+        this.value = value;
+    }
+}
 /** the typer checker */
 namespace CSTypeChecker {
     /** returns true if is a list */
@@ -28,6 +34,9 @@ namespace CSTypeChecker {
             value.type === "func" &&
             "func" in value;
     }
+}
+function interfaceError(name: CSPropertyNameType, msg: string) {
+    return `at \x1b[38;5;161minterface\x1b[0m \x1b[38;5;194m${name}\x1b[0m: ${msg}`
 }
 function createEnum(name: CSPropertyNameType, allowedValues: CSBaseAllValues[]): CSFunction {
     return {
@@ -117,6 +126,23 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         return tokens[i++];
     }
 
+    function parseReturn() {
+        consume(); // return
+
+        let value = null;
+
+        if (peek()?.value !== ";") {
+            value = parseExpression();
+        }
+
+        expect(";");
+
+        return {
+            type: "Return",
+            value
+        };
+    }
+
     function expect(value: string) {
         let t = consume();
         if (!t || t.value !== value) {
@@ -159,6 +185,63 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             name,
             params,
             body
+        };
+    }
+    function parseClsFunction(): ({
+        type: string,
+        name: string,
+        params: any[],
+        body: any[],
+        expectatives: any[]
+    }) {
+        consume(); // function
+
+        let expectatives:any[] = [];
+        let name = consume().value;
+
+        expect("(");
+
+        let params = [];
+
+        while (peek() && peek().value !== ")") {
+            params.push(consume().value);
+            if (peek()?.value === ",") consume();
+        }
+
+        expect(")");
+
+        if (peek() && peek().value === 'extends') {
+            consume();
+            // its going to extend varius
+            if (peek() && peek().value === "(") {
+                while (peek() && peek().value !== ")") {
+                    expectatives.push(consume().value);
+                    if (peek()?.value === ",") consume();
+                }
+            }
+            // single interface
+            else {
+                expectatives.push(consume().value)
+            }
+        }
+
+        expect("{");
+
+        let body = [];
+
+        while (peek() && peek().value !== "}") {
+            let stmt = parseStatement();
+            if (stmt) body.push(stmt);
+        }
+
+        expect("}");
+
+        return {
+            type: "FunctionDecl",
+            name,
+            params,
+            body,
+            expectatives
         };
     }
     function parseExpression() {
@@ -224,6 +307,35 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
 
         if (token.type === "number") {
             node = { type: "Number", value: token.value };
+        }
+
+        if (token.type === "identifier" && token.value === "func") {
+            expect("(");
+
+            let params = [];
+
+            while (peek() && peek().value !== ")") {
+                params.push(consume().value);
+                if (peek()?.value === ",") consume();
+            }
+
+            expect(")");
+            expect("{");
+
+            let body = [];
+
+            while (peek() && peek().value !== "}") {
+                let stmt = parseStatement();
+                if (stmt) body.push(stmt);
+            }
+
+            expect("}");
+
+            return {
+                type: "AnonymousFunction",
+                params,
+                body
+            };
         }
 
         if (token.type === "identifier") {
@@ -308,12 +420,41 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         };
     }
 
+    function parseInterface() {
+        consume(); // interface
+        let name = consume().value;
+
+        expect("{");
+
+        let props: Record<string, string> = {};
+
+        while (peek() && peek().value !== "}") {
+            expect("var");
+            let propName = consume().value;
+            expect(":");
+            let typeName = consume().value;
+            expect(";");
+
+            props[propName] = typeName;
+        }
+
+        expect("}");
+
+        return {
+            type: "Interface",
+            name,
+            props
+        };
+    }
+
     function parseStatement() {
         let t = peek();
 
+        if (t.value === "interface") return parseInterface();
         if (t.value === "var") return parseVar();
-
+        if (t.value === "return") return parseReturn();
         if (t.value === "func") return parseFunction();
+        if (t.value === "classfunc") return parseClsFunction();
         if (t.value === "if") return parseIf();
         if (t.type === "identifier") {
             let expr = parseExpression();
@@ -351,6 +492,14 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
     }
 
     async function evalExpr(node: any, currentScope: any = scopea, mak = false): Promise<CSBaseAllValues> {
+        if (node.type === "AnonymousFunction") {
+            return {
+                type: "userFunc",
+                params: node.params,
+                body: node.body
+            };
+        }
+        
         if (node.type === "BinaryOp") {
             let left: any = await evalExpr(node.left, currentScope);
             let right: any = await evalExpr(node.right, currentScope);
@@ -413,8 +562,50 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                 let vale;
                 try { vale = await recursiveInterprete(callee.body, localScope); }
                 catch (ex) {
+                    if (ex instanceof ReturnException) {
+                        let result = ex.value;
+
+                        if ('expectatives' in callee && Array.isArray(callee.expectatives) && callee.expectatives.length > 0) {
+                            for (let ifaceName of callee.expectatives) {
+                                let iface = globalSymbols[ifaceName];
+
+                                if (typeof iface !== 'object') throw new Error("The interface is not a object");
+
+                                if (!iface || iface.type !== "interface") {
+                                    throw new Error(`Interface ${ifaceName} not found`);
+                                }
+
+                                if (!CSTypeChecker.isCSObject(result)) {
+                                    throw new TypeError(`Return is not an object for interface ${ifaceName}`);
+                                }
+
+                                if (!('props' in iface)) throw new TypeError("not props in interface");
+
+                                for (let prop in iface.props) {
+                                    if (!(prop in result.object)) {
+                                        throw new TypeError(
+                                            interfaceError(ifaceName, `'${prop}' is not in the class that implements the interface`)
+                                        );
+                                    }
+
+                                    // (opcional) validar tipo
+                                    let expectedType = iface.props[prop];
+                                    let value = result.object[prop];
+
+                                    if (expectedType === "number" && typeof value !== "number") {
+                                        throw new TypeError(`Property '${prop}' must be number`);
+                                    }
+
+                                    if (expectedType === "string" && typeof value !== "string") {
+                                        throw new TypeError(`Property '${prop}' must be string`);
+                                    }
+                                }
+                            }
+                        }
+
+                        return result;
+                    }
                     if (ex instanceof TypeError || ex instanceof RangeError) {
-                        console.log(node);
                         ex.message = `at \x1b[38;5;161mfunc\x1b[0m ${await evalExpr(node.callee, currentScope, true)}: (${ex.message})`;
                     }
                     throw ex;
@@ -439,7 +630,19 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
 
         for (let stmt of body) {
             if (stmt.type === "ExprStmt") await evalExpr(stmt.expr, scope);
+            if (stmt.type === "Return") {
+                let value = stmt.value
+                    ? await evalExpr(stmt.value, scope)
+                    : null;
 
+                throw new ReturnException(value);
+            }
+            if (stmt.type === "Interface") {
+                globalSymbols[stmt.name] = {
+                    type: "interface",
+                    props: stmt.props
+                };
+            }
             if (stmt.type === "If") {
                 let cond = await evalExpr(stmt.condition, scope);
 
@@ -454,7 +657,8 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                 scope[stmt.name] = {
                     type: "userFunc",
                     params: stmt.params,
-                    body: stmt.body
+                    body: stmt.body,
+                    expectatives: stmt.expectatives || []
                 };
             }
 
@@ -658,20 +862,24 @@ func undef(name: String);
     }
     globalSymbols.Object = {
         type: 'func', func: (params: CSFunctionCallbackParams) => {
-            let object: CSObject = {type:'obj', object:{}};
+            let object: CSObject = { type: 'obj', object: {} };
             // package
-            object.object.set = {type: 'func', func: (params: CSFunctionCallbackParams) => {
-                // packageSet
-                if (typeof params[0] !== 'string') throw new Error("Not allowed");
-                object.object[params[0]] = params[1];
-                return true;
-            }};
+            object.object.set = {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    // packageSet
+                    if (typeof params[0] !== 'string') throw new Error("Not allowed");
+                    object.object[params[0]] = params[1];
+                    return true;
+                }
+            };
             // package
-            object.object.get = {type: 'func', func: (params: CSFunctionCallbackParams) => {
-                // packageGet
-                if (typeof params[0] !== 'string') throw new Error("Not allowed");
-                return object.object[params[0]];
-            }};
+            object.object.get = {
+                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                    // packageGet
+                    if (typeof params[0] !== 'string') throw new Error("Not allowed");
+                    return object.object[params[0]];
+                }
+            };
             return object;
         }
     }
