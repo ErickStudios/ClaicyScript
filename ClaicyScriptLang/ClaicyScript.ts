@@ -1,44 +1,64 @@
-/** ClaicyScript interpreter v1.0 */
-import { CSPropertyNameType, CSBaseAllValues, CSArray, CSObject, CSFunction, CSString, CSObjectPropertys, CSFunctionCallbackParams } from "./typesDefinitions/buildings"
+/** ClaicyScript interpreter v1.1 */
+import { CSPropertyNameType, CSObjectPropertys, ClaicyScript } from "./typesDefinitions/buildings"
 /** a member node, a access to node */
 type MemberNode = {
     type: "Member";
     object: any;
     property: string;
 };
-class ReturnException {
-    value: any;
-    constructor(value: any) {
+export class ReturnException {
+    value: ClaicyScript.BaseAllValues;
+    constructor(value: ClaicyScript.BaseAllValues) {
         this.value = value;
     }
 }
 /** the typer checker */
-namespace CSTypeChecker {
+export namespace CSTypeChecker {
     /** returns true if is a list */
-    export function isCSArray(value: CSBaseAllValues): value is CSArray {
+    export function isCSArray(value: ClaicyScript.BaseAllValues): value is ClaicyScript.Array {
         return typeof value === "object" && value !== null && value.type === "array";
     }
     /** returns true if is a object */
-    export function isCSObject(value: CSBaseAllValues): value is CSObject {
+    export function isCSObject(value: ClaicyScript.BaseAllValues): value is ClaicyScript.Object {
         return typeof value === "object" &&
             value !== null &&
             "type" in value &&
             value.type === "obj" &&
             "object" in value;
     }
+    /** returns true if is a interface */
+    export function isCSInterface(value: ClaicyScript.BaseAllValues): value is ClaicyScript.Interface {
+        return typeof value === "object" &&
+            value !== null &&
+            "type" in value &&
+            value.type === "interface" &&
+            "props" in value && typeof value.props === 'object';
+    }
     /** returns true if is a function */
-    export function isCSFunction(value: CSBaseAllValues): value is CSFunction {
+    export function isCSFunction(value: ClaicyScript.BaseAllValues): value is ClaicyScript.Function {
         return typeof value === "object" &&
             value !== null &&
             "type" in value &&
             value.type === "func" &&
             "func" in value;
     }
+    /** returns true if is a user function */
+    export function isCSUserFunction(value: ClaicyScript.BaseAllValues): value is ClaicyScript.UserFunction {
+        return typeof value === "object" &&
+            value !== null &&
+            "type" in value &&
+            value.type === "userFunc" &&
+            "params" in value &&
+            "body" in value;
+    }
 }
-function interfaceError(name: CSPropertyNameType, msg: string) {
+export function interfaceError(name: CSPropertyNameType, msg: string) {
     return `at \x1b[38;5;161minterface\x1b[0m \x1b[38;5;194m${name}\x1b[0m: ${msg}`
 }
-function createEnum(name: CSPropertyNameType, allowedValues: CSBaseAllValues[]): CSFunction {
+export function interfaceRep(name: CSPropertyNameType, msg:string = "") {
+    return `\x1b[38;5;161minterface\x1b[0m \x1b[38;5;194m${name}\x1b[0m${msg}`;
+}
+export function createEnum(name: CSPropertyNameType, allowedValues: ClaicyScript.BaseAllValues[]): ClaicyScript.Function {
     return {
         type: 'func',
         func: (params) => {
@@ -54,7 +74,7 @@ function createEnum(name: CSPropertyNameType, allowedValues: CSBaseAllValues[]):
         }
     };
 }
-function errorAtCls(name: CSPropertyNameType, msg: CSString, before = "") {
+export function errorAtCls(name: CSPropertyNameType, msg: ClaicyScript.String, before = "") {
     return `at \x1b[38;5;161mclass\x1b[0m \x1b[38;5;194m${name}\x1b[0m: (${before}${msg})`
 }
 export function tokenize(code: string) {
@@ -214,10 +234,12 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             consume();
             // its going to extend varius
             if (peek() && peek().value === "(") {
+                consume();
                 while (peek() && peek().value !== ")") {
                     expectatives.push(consume().value);
                     if (peek()?.value === ",") consume();
-                }
+                } 
+                consume();
             }
             // single interface
             else {
@@ -420,9 +442,53 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         };
     }
 
+    function parseFor() {
+        consume();
+        let variable = consume().value;
+
+        expect("in");
+
+        let inWhat = parseExpression();
+
+        expect("{")
+
+        let body = [];
+
+        while (peek() && peek().value !== "}") {
+            body.push(parseStatement());
+        }
+
+        expect("}");
+
+        return {
+            type: "For",
+            variable,
+            inWhat,
+            body
+        };
+    }
+
     function parseInterface() {
         consume(); // interface
         let name = consume().value;
+        let expectatives: ClaicyScript.String[] = [] as ClaicyScript.String[];
+
+        if (peek() && peek().value === 'extends') {
+            consume();
+            // its going to extend varius
+            if (peek() && peek().value === "(") {
+                consume();
+                while (peek() && peek().value !== ")") {
+                    expectatives.push(consume().value);
+                    if (peek()?.value === ",") consume();
+                }
+                consume();
+            }
+            // single interface
+            else {
+                expectatives.push(consume().value)
+            }
+        }
 
         expect("{");
 
@@ -433,6 +499,7 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             let propName = consume().value;
             expect(":");
             let typeName = consume().value;
+            if (typeof typeName === 'string') typeName = (typeName == 'String' || typeName == 'Number' || typeName == 'Boolean') ? typeName.toLowerCase() : typeName
             expect(";");
 
             props[propName] = typeName;
@@ -443,11 +510,12 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         return {
             type: "Interface",
             name,
-            props
+            props,
+            expectatives
         };
     }
 
-    function parseStatement() {
+    function parseStatement(): any {
         let t = peek();
 
         if (t.value === "interface") return parseInterface();
@@ -455,6 +523,7 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         if (t.value === "return") return parseReturn();
         if (t.value === "func") return parseFunction();
         if (t.value === "classfunc") return parseClsFunction();
+        if (t.value === "for") return parseFor();
         if (t.value === "if") return parseIf();
         if (t.type === "identifier") {
             let expr = parseExpression();
@@ -491,7 +560,101 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
         return { evalExpr, recursiveInterprete };
     }
 
-    async function evalExpr(node: any, currentScope: any = scopea, mak = false): Promise<CSBaseAllValues> {
+    async function callFunc(callee: ClaicyScript.BaseAllValues, argsa: ClaicyScript.CallbackParams, currentScope: CSObjectPropertys) {
+
+        let args = [];
+
+        for (let arg of argsa) {
+            args.push(arg);
+        }
+
+        if (!(typeof callee === 'object' && 'type' in callee)) throw new Error("no callable function");
+
+        if (callee.type === 'userFunc') {
+            if (!('params' in callee && Array.isArray(callee.params))) throw new Error("no callable function");
+            let localScope: Record<string, ClaicyScript.BaseAllValues> = {};
+
+            // asignar parámetros
+            for (let i = 0; i < callee.params.length; i++) {
+                localScope[callee.params[i]] = args[i];
+            }
+
+            // ejecutar cuerpo
+            let vale;
+            try { vale = await recursiveInterprete(callee.body, localScope); }
+            catch (ex) {
+                if (ex instanceof ReturnException) {
+                    let result = ex.value;
+
+                    if ('expectatives' in callee && Array.isArray(callee.expectatives) && callee.expectatives.length > 0) {
+                        if (CSTypeChecker.isCSObject(result)) {
+                            result.classesHeredated = [];
+                            result.interfaces = [];
+                        }
+
+                        for (let ifaceName of callee.expectatives) {
+                            let iface = globalSymbols[ifaceName];
+
+                            if (CSTypeChecker.isCSObject(result)) {
+                                result.interfaces?.push(iface);
+                            }
+
+                            if (typeof iface !== 'object') throw new Error("The interface is not a object");
+
+                            if (!iface || iface.type !== "interface") {
+                                throw new Error(`Interface ${ifaceName} not found`);
+                            }
+
+                            if (!CSTypeChecker.isCSObject(result)) {
+                                throw new TypeError(`Return is not an object for interface ${ifaceName}`);
+                            }
+
+                            if (!('props' in iface)) throw new TypeError("not props in interface");
+
+                            for (let prop in iface.props) {
+                                if (!(prop in result.object)) {
+                                    throw new TypeError(
+                                        interfaceError(ifaceName, `'${prop}' is not in the class that implements the interface`)
+                                    );
+                                }
+
+                                // (opcional) validar tipo
+                                let expectedType = iface.props[prop];
+                                let value = result.object[prop];
+
+                                if (expectedType === "number" && typeof value !== "number") {
+                                    throw new TypeError(`Property '${prop}' must be number`);
+                                }
+
+                                if (expectedType === "string" && typeof value !== "string") {
+                                    throw new TypeError(`Property '${prop}' must be string`);
+                                }
+                            }
+                        }
+                    }
+
+                    return result;
+                }
+                if (ex instanceof TypeError || ex instanceof RangeError) {
+                    ex.message = `at \x1b[38;5;161mfunc\x1b[0m ${await evalExpr(callee, currentScope, true)}: (${ex.message})`;
+                }
+                throw ex;
+            }
+            return 'null';
+        }
+
+        if ('func' in callee && typeof callee.func == 'function') {
+            let vale;
+            vale = await callee.func(args);
+            return vale;
+        }
+
+        console.error("No es función:", callee);
+
+        return 'null' as ClaicyScript.String;
+    }
+
+    async function evalExpr(node: any, currentScope: any = scopea, mak = false): Promise<ClaicyScript.BaseAllValues> {
         if (node.type === "AnonymousFunction") {
             return {
                 type: "userFunc",
@@ -541,85 +704,10 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
 
         if (node.type === "Call") {
             let callee = await evalExpr(node.callee, currentScope);
-
-            let args = [];
-            for (let arg of node.args) {
-                args.push(await evalExpr(arg, currentScope));
-            }
-
-            if (!(typeof callee === 'object' && 'type' in callee)) throw new Error("no callable function");
-
-            if (callee.type === 'userFunc') {
-                if (!('params' in callee && Array.isArray(callee.params))) throw new Error("no callable function");
-                let localScope: Record<string, CSBaseAllValues> = {};
-
-                // asignar parámetros
-                for (let i = 0; i < callee.params.length; i++) {
-                    localScope[callee.params[i]] = args[i];
-                }
-
-                // ejecutar cuerpo
-                let vale;
-                try { vale = await recursiveInterprete(callee.body, localScope); }
-                catch (ex) {
-                    if (ex instanceof ReturnException) {
-                        let result = ex.value;
-
-                        if ('expectatives' in callee && Array.isArray(callee.expectatives) && callee.expectatives.length > 0) {
-                            for (let ifaceName of callee.expectatives) {
-                                let iface = globalSymbols[ifaceName];
-
-                                if (typeof iface !== 'object') throw new Error("The interface is not a object");
-
-                                if (!iface || iface.type !== "interface") {
-                                    throw new Error(`Interface ${ifaceName} not found`);
-                                }
-
-                                if (!CSTypeChecker.isCSObject(result)) {
-                                    throw new TypeError(`Return is not an object for interface ${ifaceName}`);
-                                }
-
-                                if (!('props' in iface)) throw new TypeError("not props in interface");
-
-                                for (let prop in iface.props) {
-                                    if (!(prop in result.object)) {
-                                        throw new TypeError(
-                                            interfaceError(ifaceName, `'${prop}' is not in the class that implements the interface`)
-                                        );
-                                    }
-
-                                    // (opcional) validar tipo
-                                    let expectedType = iface.props[prop];
-                                    let value = result.object[prop];
-
-                                    if (expectedType === "number" && typeof value !== "number") {
-                                        throw new TypeError(`Property '${prop}' must be number`);
-                                    }
-
-                                    if (expectedType === "string" && typeof value !== "string") {
-                                        throw new TypeError(`Property '${prop}' must be string`);
-                                    }
-                                }
-                            }
-                        }
-
-                        return result;
-                    }
-                    if (ex instanceof TypeError || ex instanceof RangeError) {
-                        ex.message = `at \x1b[38;5;161mfunc\x1b[0m ${await evalExpr(node.callee, currentScope, true)}: (${ex.message})`;
-                    }
-                    throw ex;
-                }
-                return 'null';
-            }
-
-            if ('func' in callee && typeof callee.func == 'function') {
-                let vale;
-                vale = await callee.func(args);
-                return vale;
-            }
-
-            console.error("No es función:", callee);
+            const evaluatedArgs = await Promise.all(
+                node.args.map((v:any) => evalExpr(v, currentScope))
+            );
+            return await callFunc(callee, evaluatedArgs, currentScope)
         }
 
         return Boolean();
@@ -633,15 +721,57 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
             if (stmt.type === "Return") {
                 let value = stmt.value
                     ? await evalExpr(stmt.value, scope)
-                    : null;
+                    : 0;
 
                 throw new ReturnException(value);
             }
+            if (stmt.type === 'For') {
+                let inWhat = await evalExpr(stmt.inWhat, scope);
+                let forVariable = stmt.variable;
+                let forBody = stmt.body;
+
+                if (
+                    CSTypeChecker.isCSObject(inWhat) &&
+                    '__claicySmarty' in inWhat.object&& 
+                    CSTypeChecker.isCSObject(inWhat.object.__claicySmarty)
+                ) {
+                    // object binding
+                    let claicySmarty: ClaicyScript.Object = inWhat.object.__claicySmarty;
+                    if (
+                        (CSTypeChecker.isCSUserFunction(claicySmarty.object.iterator) ||
+                         CSTypeChecker.isCSFunction(claicySmarty.object.iterator)) &&
+                        (CSTypeChecker.isCSUserFunction(claicySmarty.object.length) ||
+                         CSTypeChecker.isCSFunction(claicySmarty.object.length))
+                    ) {
+                        // iterator necesary functions
+                        let iteratorFn: ClaicyScript.UserFunction | ClaicyScript.Function = claicySmarty.object.iterator;
+                        let lengthFn: ClaicyScript.UserFunction | ClaicyScript.Function = claicySmarty.object.length;
+
+                        // index of the thing
+                        let index: ClaicyScript.Number = 0;
+                        while (index < (await callFunc(lengthFn, [inWhat], scope) as ClaicyScript.Number)) {
+                            // the thing
+                            let thingToAssign: ClaicyScript.BaseAllValues = await callFunc(iteratorFn, [inWhat, index], scope);
+                            scope[forVariable as ClaicyScript.String] = thingToAssign as ClaicyScript.BaseAllValues;
+
+                            await recursiveInterprete(forBody, scope, globalSymbolsX);
+                            index++;
+                        }
+                    }
+                }
+            }
             if (stmt.type === "Interface") {
-                globalSymbols[stmt.name] = {
+                let inter: ClaicyScript.Interface = {
                     type: "interface",
-                    props: stmt.props
+                    props: stmt.props,
+                    name: stmt.name
                 };
+                for (let element of stmt.expectatives) {
+                    if (CSTypeChecker.isCSInterface(globalSymbols[element])) 
+                        Object.assign(inter.props, globalSymbols[element].props);
+                }
+                Object.assign(inter.props, stmt.props);
+                globalSymbols[stmt.name] = inter;
             }
             if (stmt.type === "If") {
                 let cond = await evalExpr(stmt.condition, scope);
@@ -737,152 +867,184 @@ func notDefined(name: String): Boolean;
 func undef(name: String);
 ```
      */
-    let globalSymbols: CSObjectPropertys | any = {};
-    globalSymbols.createEnum = createEnum;
-    globalSymbols.errorAtCls = errorAtCls;
+    /** @type {CSObjectPropertys} */
+    let globalSymbols: CSObjectPropertys = {};
     globalSymbols.true = true;
     globalSymbols.false = false;
-    globalSymbols.Array = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => ({
-            type: 'array',
-            items: params
-        })
-    };
-    globalSymbols.InternalDocsStrictEnum = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            if (typeof params[0] !== 'string')
-                throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
-            let enumName = params[0];
-            if (!CSTypeChecker.isCSArray(params[1]))
-                throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
-            let allowedValues = params[1].items;
+    /** represents a array a list for store things or others lists */
+    globalSymbols.Array = {type: 'func', func: (params: ClaicyScript.CallbackParams) => ({
+        type: 'array',
+        items: params
+    } as ClaicyScript.Array)};
+    /** represents a documentation strict enum */
+    globalSymbols.InternalDocsStrictEnum = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        if (typeof params[0] !== 'string')
+            throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
+        let enumName = params[0];
+        if (!CSTypeChecker.isCSArray(params[1]))
+            throw new TypeError(errorAtCls("InternalDocsStrictEnum", "error on create the enum"));
+        let allowedValues = params[1].items;
 
-            return createEnum(enumName, allowedValues);
-        }
-    };
+        return createEnum(enumName, allowedValues) as ClaicyScript.Function;
+    }};
+    /** gets the representation of a thing */
+    globalSymbols.repr = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        let solveToString: (thing: any, re?: boolean, tabs?: number) => string = (thing: any, re=false, tabs=0) => {
+            let tabulated = "   ".repeat(tabs);
+            if (Array.isArray(thing)) {
+                return "[" + thing.map(v => solveToString(v)).join(",") + "]";
+            }
+            if (CSTypeChecker.isCSArray(thing)) {
+                return solveToString(thing.items);
+            }
+            if (CSTypeChecker.isCSInterface(thing)) {
+                return interfaceRep(thing.name || 'anonymus');
+            }
+            if (CSTypeChecker.isCSFunction(thing)) {
+                return "\x1b[38;5;161mfunc\x1b[0m(...)"
+            }
+            if (CSTypeChecker.isCSUserFunction(thing)) {
+                return "\x1b[38;5;161mfunc\x1b[0m(...)"
+            }
+            if (CSTypeChecker.isCSObject(thing)) {
+                let description = "\x1b[38;5;194mObject\x1b[0m {\n";
+                for (const K in thing.object) {
+                    description += tabulated + '   ' + K + ': ' + solveToString(thing.object[K], true, tabs++) + ";\n";
+                }
+                description += tabulated + "}";
+                return description;
+            }
+            return ((typeof thing === 'string' && re) ? "\x1b[32m'" : '') + String(thing) + ((typeof thing === 'string' && re) ? "'\x1b[0m" : '');
+        }; return solveToString(params[0]);
+    }}
+    /** prints one or varius values */
+    globalSymbols.print = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        console.log(...(params.map(v => (globalSymbols.repr as ClaicyScript.Function).func([v]))));
+        return 0 as ClaicyScript.Number;
+    }};
+    /** class for Math operations */
+    globalSymbols.Math = {type: "obj", object: {
+        add: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            const [a, b] = params;
+
+            // the two are numbers
+            if (typeof a === 'number' && typeof b === 'number') return a + b as ClaicyScript.Number;
+            // the two are strings
+            if (typeof a === 'string' && typeof b === 'string') return a + b as ClaicyScript.String;
+
+            throw new TypeError("Math.add expects number or string");
+        }},
+        sub: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            const [a, b] = params;
+
+            // the two are number
+            if (typeof a === 'number' && typeof b === 'number') return a - b as ClaicyScript.Number;
+
+            throw new TypeError("Math.sub expects number");
+        }},
+        div: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            const [a, b] = params;
+
+            // the two are numbers
+            if (typeof a === 'number' && typeof b === 'number') return a / b as ClaicyScript.Number;
+
+            throw new TypeError("Math.div expects number");
+        }},
+        mul: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            const [a, b] = params;
+
+            // the two are number
+            if (typeof a === 'number' && typeof b === 'number') return a * b as ClaicyScript.Number;
+
+            throw new TypeError("Math.mul expects number");
+        }},
+    }};
+    /** represents a boolean, a value that can be only true or false (deprecated) */
     globalSymbols.Boolean = createEnum('Boolean', [true, false]);
-    globalSymbols.print = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            console.log(...params)
-        }
-    };
-    globalSymbols.Math = {
-        type: "obj", object: {
-            add: {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
-                    const a = params[0];
-                    const b = params[1];
-
-                    if (typeof a === 'number' && typeof b === 'number') {
-                        return a + b;
-                    }
-
-                    if (typeof a === 'string' && typeof b === 'string') {
-                        return a + b;
-                    }
-
-                    throw new TypeError("Math.add expects number or string");
-                }
-            },
-            sub: {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
-                    const a = params[0];
-                    const b = params[1];
-
-                    if (typeof a === 'number' && typeof b === 'number') {
-                        return a - b;
-                    }
-
-                    throw new TypeError("Math.sub expects number");
-                }
-            },
-            div: {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
-                    const a = params[0];
-                    const b = params[1];
-
-                    if (typeof a === 'number' && typeof b === 'number') {
-                        return a / b;
-                    }
-
-                    throw new TypeError("Math.div expects number");
-                }
-            },
-            mul: {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
-                    const a = params[0];
-                    const b = params[1];
-
-                    if (typeof a === 'number' && typeof b === 'number') {
-                        return a * b;
-                    }
-
-                    throw new TypeError("Math.mul expects number");
-                }
-            },
-        }
-    };
-    globalSymbols.String = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            return String(params[0]);
-        }
-    }
-    globalSymbols.exportToGlobal = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            let exportAs = params[0];
-            let exportValue = params[1];
-            if (typeof exportAs !== 'string')
-                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-            globalSymbols[exportAs] = exportValue;
-        }
-    }
-    globalSymbols.notDefined = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            if (typeof params[0] !== 'string')
-                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-
-            let exportAs = params[0];
-            return !(exportAs in globalSymbols);
-        }
-    }
-    globalSymbols.undef = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            if (typeof params[0] !== 'string')
-                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-            delete globalSymbols[params[0]];
-        }
-    }
-    globalSymbols.getVar = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            let exportAs = params[0];
-            if (typeof exportAs !== 'string')
-                throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
-            return globalSymbols[exportAs];
-        }
-    }
+    /** represents a boolean, a value that can be only true or false */
+    globalSymbols.boolean = globalSymbols.Boolean; // new method for create booleans
+    /** represents a string, a value that contains text (deprecated) */
+    globalSymbols.String = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        return String(params[0]) as ClaicyScript.String;
+    }}
+    /** represents a string, a value that contains text */
+    globalSymbols.string = globalSymbols.String; // new method for create strings
+    /** represents a number, a value that can be counted, example 1, 2, 3, ... (deprecated) */
+    globalSymbols.Number = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        return Number(params[0]) as ClaicyScript.Number;
+    }}
+    /** represents a number, a value that can be counted, example 1, 2, 3 */
+    globalSymbols.number = globalSymbols.Number; // new method for create numbers
+    /** represents a object, the base of all the non binary values, a container that can be contain the things that you want */
     globalSymbols.Object = {
-        type: 'func', func: (params: CSFunctionCallbackParams) => {
-            let object: CSObject = { type: 'obj', object: {} };
+        type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            let object: ClaicyScript.Object = { type: 'obj', object: {} };
             // package
             object.object.set = {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                type: 'func', func: (params: ClaicyScript.CallbackParams) => {
                     // packageSet
                     if (typeof params[0] !== 'string') throw new Error("Not allowed");
                     object.object[params[0]] = params[1];
-                    return true;
+                    return true as ClaicyScript.Bool;
                 }
             };
             // package
             object.object.get = {
-                type: 'func', func: (params: CSFunctionCallbackParams) => {
+                type: 'func', func: (params: ClaicyScript.CallbackParams) => {
                     // packageGet
                     if (typeof params[0] !== 'string') throw new Error("Not allowed");
-                    return object.object[params[0]];
+                    return object.object[params[0]] as ClaicyScript.BaseAllValues;
                 }
             };
-            return object;
+            return object as ClaicyScript.Object;
         }
     }
+    /** exports a value to the global variables */
+    globalSymbols.exportToGlobal = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        let exportAs = params[0];
+        let exportValue = params[1];
+        if (typeof exportAs !== 'string')
+            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+        globalSymbols[exportAs] = exportValue;
+        return 0 as ClaicyScript.Number;
+    }}
+    /** if a thing are not defined */
+    globalSymbols.notDefined = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        if (typeof params[0] !== 'string')
+            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+
+        let exportAs = params[0];
+        return !(exportAs in globalSymbols);
+    }}
+    /** undefine a thing */
+    globalSymbols.undef = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        if (typeof params[0] !== 'string')
+            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+        delete globalSymbols[params[0]];
+        return 0 as ClaicyScript.Number;
+    }}
+    /** get a variable */
+    globalSymbols.getVar = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        let exportAs = params[0];
+        if (typeof exportAs !== 'string')
+            throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
+        return globalSymbols[exportAs];
+    }}
+    /** check if a thing is a instance of a thing */
+    globalSymbols.instanceof = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        let [target, source] = params;
+
+        if (!CSTypeChecker.isCSObject(target)) return false;
+
+        // interfaces
+        if (Array.isArray(target.interfaces)) {
+            for (let iface of target.interfaces) {
+                if (CSTypeChecker.isCSInterface(iface) && CSTypeChecker.isCSInterface(source) && (iface.name === source.name)) return true;
+            }
+        }
+
+        return false;
+    }};
 
     return globalSymbols;
 }

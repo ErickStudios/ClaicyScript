@@ -17,6 +17,8 @@ export interface CSFunction extends CSValue {
 /** a object, a dictionary that contains whatever that you want */
 export interface CSObject extends CSValue {
     object: CSObjectPropertys;
+    classesHeredated?: CSBaseAllValues[];
+    interfaces?: CSBaseAllValues[];
 }
 /** a array, a list of enumerable things, from index start 0. 0... 1... 2... to the infinity */
 export interface CSArray extends CSValue {
@@ -31,6 +33,22 @@ export interface CSUserFunction extends CSValue {
 /** a interface, a pact that the codes makes with a class and a base */
 export interface CSInterface extends CSValue {
     props: any;
+    name?: CSString;
 }
 /** exports the required things */
 export { CSValue, CSPropertyNameType, CSString, CSNumber, CSBoolean };
+/** exports the values */
+export namespace ClaicyScript {
+    export type BaseAllValues = CSBaseAllValues;
+    export type Bool = CSBoolean;
+    export type String = CSString;
+    export type Number = CSNumber;
+    export type Object = CSObject;
+    export type Array = CSArray;
+    export type UserFunction = CSUserFunction;
+    export type Function = CSFunction;
+    export type Interface = CSInterface;
+    export type ArrayLike = CSArrayInternalItems;
+    export type CallbackParams = ArrayLike;
+    export type ObjectPropertys = CSObjectPropertys;
+}

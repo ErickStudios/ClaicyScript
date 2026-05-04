@@ -1,43 +1,26 @@
 const ClaicyScript = require("./../ClaicyScriptCompiled/ClaicyScriptPacked");
 let library = ClaicyScript.exportLibrary();
 let tokens = ClaicyScript.tokenize(`
-    interface Animal {
-        var name: string;
-        var sound: string;
-        var speak: any;
-    }
-    classfunc Dog() extends Animal {
+    classfunc myIterable(len) {
         var this = Object();
-
-        this.set("name", "Firulais");
-        this.set("sound", "Guau");
-        this.set("speak", func() {
-            print("woof");
+        var __claicySmarty = Object();
+        __claicySmarty.set("iterator", func(this,index) {
+            return index;            
         });
-        
+        __claicySmarty.set("length", func(this) {
+            return this.len;
+        });
+        this.set("len", len);
+        this.set("__claicySmarty",__claicySmarty);
         return this;
     }
-    classfunc Cat() extends Animal {
-        var this = Object();
-
-        this.set("name", "Michi");
-        this.set("sound", "Miau");
-        this.set("speak", func() {
-            print("meow");
-        });
-        
-        return this;
+    var test = myIterable(5);
+    for x in test {
+        print(x);
     }
-    
-    func main(Dog, Cat) {
-        var dog = Dog();
-        var cat = Cat();
-
-        dog.speak();
-        cat.speak();
-    } main(Dog, Cat);
+    print(repr(test));
     `)
 let parsed = ClaicyScript.parse(tokens);
 (async() => {
     await ClaicyScript.run(parsed, library);
-})()
+})();
