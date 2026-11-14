@@ -552,13 +552,9 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
 
     return ast;
 }
-export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne: boolean = false): Promise<CSObjectPropertys | ({ evalExpr: Function, recursiveInterprete: Function })> {
+export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne: boolean = false): Promise<CSObjectPropertys | ({ evalExpr: Function, recursiveInterprete: Function , callFunc: Function})> {
     let scopea = {};
     let globalSymbols = globalSymbolsP;
-
-    if (makeOne) {
-        return { evalExpr, recursiveInterprete };
-    }
 
     async function callFunc(callee: ClaicyScript.BaseAllValues, argsa: ClaicyScript.CallbackParams, currentScope: CSObjectPropertys) {
 
@@ -579,6 +575,11 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                 localScope[callee.params[i]] = args[i];
             }
 
+            // asignar local scope
+            for (let [k, v] of Object.entries(currentScope)) {
+                localScope[k] = v;
+            }
+
             // ejecutar cuerpo
             let vale;
             try { vale = await recursiveInterprete(callee.body, localScope); }
@@ -593,7 +594,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                         }
 
                         for (let ifaceName of callee.expectatives) {
-                            let iface = globalSymbols[ifaceName];
+                            let iface = globalSymbols[ifaceName] || localScope[ifaceName];
 
                             if (CSTypeChecker.isCSObject(result)) {
                                 result.interfaces?.push(iface);
@@ -814,6 +815,10 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
         }
     }
 
+    if (makeOne) {
+        return { evalExpr, recursiveInterprete, callFunc };
+    }
+
     try { await recursiveInterprete(ast); }
     catch (ex) {
         if (ex instanceof TypeError || ex instanceof Error) {
@@ -1029,6 +1034,12 @@ func undef(name: String);
         if (typeof exportAs !== 'string')
             throw new SyntaxError(errorAtCls("InternalNamespace", "trying to get a invalid var name"))
         return globalSymbols[exportAs];
+    }}
+    globalSymbols.getGlobal = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        return {
+            type: 'obj',
+            object: globalSymbols
+        }
     }}
     /** check if a thing is a instance of a thing */
     globalSymbols.instanceof = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
