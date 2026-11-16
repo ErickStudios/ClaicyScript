@@ -1,5 +1,5 @@
 /** ClaicyScript interpreter v1.1 */
-import { CSPropertyNameType, CSObjectPropertys, ClaicyScript } from "./typesDefinitions/buildings"
+import { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback } from "./typesDefinitions/buildings"
 /** a member node, a access to node */
 type MemberNode = {
     type: "Member";
@@ -368,7 +368,8 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             node = { type: "String", value: token.value };
         }
 
-        // member access (obj.prop)
+        let parent;
+
         while (peek() && peek().value === ".") {
             consume();
             let prop = consume();
@@ -377,6 +378,21 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
                 type: "Member",
                 object: node,
                 property: prop.value
+            };
+            parent = node.object;
+        }
+
+        let acessTo = null;
+        if (peek() && peek().value === ':') {
+            consume();
+            acessTo = consume().value;
+
+            if (!parent) parent = node;
+            
+            node = {
+                type: "Member",
+                object: node,
+                property: acessTo
             };
         }
 
@@ -394,7 +410,9 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             expect(")");
 
             return {
-                type: "Call",
+                type: acessTo !== null ? "CallMethod" : "Call",
+                parent,
+                acessTo,
                 callee: node,
                 args
             };
@@ -552,7 +570,9 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
 
     return ast;
 }
-export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne: boolean = false): Promise<CSObjectPropertys | ({ evalExpr: Function, recursiveInterprete: Function , callFunc: Function})> {
+export async function run(ast: any, globalSymbolsP: any, makeOne: true): Promise<({ evalExpr: Function, recursiveInterprete: Function , callFunc: (callee: ClaicyScript.BaseAllValues, argsa: ClaicyScript.CallbackParams, scop: CSObjectPropertys) => Promise<ClaicyScript.BaseAllValues>})>;
+export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne?: false): Promise<CSObjectPropertys>;
+export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne: boolean = false): Promise<CSObjectPropertys | ({ evalExpr: Function, recursiveInterprete: Function , callFunc: (callee: ClaicyScript.BaseAllValues, argsa: ClaicyScript.CallbackParams, scop: CSObjectPropertys) => Promise<ClaicyScript.BaseAllValues>})> {
     let scopea = {};
     let globalSymbols = globalSymbolsP;
 
@@ -565,20 +585,29 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
         }
 
         if (!(typeof callee === 'object' && 'type' in callee)) throw new Error("no callable function");
+        
+        let localScope: Record<string, ClaicyScript.BaseAllValues> = {};
+
+        // asignar local scope
+        for (let [k, v] of Object.entries(currentScope)) {
+            localScope[k] = v;
+        }
 
         if (callee.type === 'userFunc') {
             if (!('params' in callee && Array.isArray(callee.params))) throw new Error("no callable function");
-            let localScope: Record<string, ClaicyScript.BaseAllValues> = {};
 
             // asignar parámetros
             for (let i = 0; i < callee.params.length; i++) {
                 localScope[callee.params[i]] = args[i];
             }
 
-            // asignar local scope
-            for (let [k, v] of Object.entries(currentScope)) {
-                localScope[k] = v;
-            }
+            localScope.arguments = { type: 'obj', object: {
+                __claicySmarty: {type:'obj', object: {
+                    iterator: {type:'func', func: (params) => args[Number(params[1])]},
+                    length: {type:'func', func: (params) => args.length},
+                }},
+                '_functor_': {type: 'func', func: (params) => args[Number(params[0])]}
+            }}
 
             // ejecutar cuerpo
             let vale;
@@ -646,7 +675,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
 
         if ('func' in callee && typeof callee.func == 'function') {
             let vale;
-            vale = await callee.func(args);
+            vale = await callee.func(args, localScope);
             return vale;
         }
 
@@ -703,11 +732,28 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
 
         if (node.type === "String") return node.value;
 
-        if (node.type === "Call") {
+        if (node.type === "Call" || node.type == 'CallMethod') {
             let callee = await evalExpr(node.callee, currentScope);
-            const evaluatedArgs = await Promise.all(
+            let callme = [
+                ...(node.type === 'CallMethod' ? [await evalExpr(node.parent, currentScope)] : [])
+            ]
+
+            if (CSTypeChecker.isCSObject(callee)) {
+                if ('_functor_' in callee.object && (CSTypeChecker.isCSUserFunction(callee.object._functor_) || CSTypeChecker.isCSFunction(callee.object._functor_))) {
+                    let evaluatedArgs = await Promise.all(
+                        node.args.map((v:any) => evalExpr(v, currentScope))
+                    );
+                    evaluatedArgs = [...callme, callee, ...evaluatedArgs];
+
+                    return await callFunc(callee, evaluatedArgs, currentScope)
+                }
+            }
+
+            let evaluatedArgs = await Promise.all(
                 node.args.map((v:any) => evalExpr(v, currentScope))
             );
+            evaluatedArgs = [...callme, ...evaluatedArgs];
+
             return await callFunc(callee, evaluatedArgs, currentScope)
         }
 
@@ -927,10 +973,29 @@ func undef(name: String);
         console.log(...(params.map(v => (globalSymbols.repr as ClaicyScript.Function).func([v]))));
         return 0 as ClaicyScript.Number;
     }};
+    const casterForUserFast = async (search: string, params: ClaicyScript.CallbackParams, scope?: CSObjectPropertys) =>{
+        const [a, b] = params;
+
+        if (CSTypeChecker.isCSObject(a)) {
+            let fun = a.object[search] ?? Boolean(false);
+            let fnRun = (await run([], {}, true)).callFunc;
+
+            if ((CSTypeChecker.isCSFunction(fun) || CSTypeChecker.isCSUserFunction(fun)) && typeof scope === 'object') {
+                return await fnRun(fun, params, scope);
+            }
+        }
+
+        return null;
+    }
+
     /** class for Math operations */
     globalSymbols.Math = {type: "obj", object: {
-        add: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        add: {type: 'func', func: async (params: ClaicyScript.CallbackParams, scope) => {
             const [a, b] = params;
+
+            const ab = await casterForUserFast('_add', params, scope);;
+            if (ab !== null)
+                return ab;
 
             // the two are numbers
             if (typeof a === 'number' && typeof b === 'number') return a + b as ClaicyScript.Number;
@@ -939,29 +1004,56 @@ func undef(name: String);
 
             throw new TypeError("Math.add expects number or string");
         }},
-        sub: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        sub: {type: 'func', func: async (params: ClaicyScript.CallbackParams, scope) => {
             const [a, b] = params;
+
+            const ab = await casterForUserFast('_sub', params, scope);;
+            if (ab !== null)
+                return ab;
 
             // the two are number
             if (typeof a === 'number' && typeof b === 'number') return a - b as ClaicyScript.Number;
 
             throw new TypeError("Math.sub expects number");
         }},
-        div: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        div: {type: 'func', func: async (params: ClaicyScript.CallbackParams, scope) => {
             const [a, b] = params;
+
+            const ab = await casterForUserFast('_div', params, scope);;
+            if (ab !== null)
+                return ab;
 
             // the two are numbers
             if (typeof a === 'number' && typeof b === 'number') return a / b as ClaicyScript.Number;
 
             throw new TypeError("Math.div expects number");
         }},
-        mul: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        mul: {type: 'func', func: async (params: ClaicyScript.CallbackParams, scope) => {
             const [a, b] = params;
+
+            const ab = await casterForUserFast('_mul', params, scope);;
+            if (ab !== null)
+                return ab;
 
             // the two are number
             if (typeof a === 'number' && typeof b === 'number') return a * b as ClaicyScript.Number;
 
             throw new TypeError("Math.mul expects number");
+        }},
+        boolAnd: {type: 'func', func: (params: ClaicyScript.CallbackParams, scope) => {
+            return params[0] && params[1];
+        }},
+        boolOr: {type: 'func', func: (params: ClaicyScript.CallbackParams, scope) => {
+            return params[0] || params[1];
+        }},
+        greater: {type: 'func', func: (params: ClaicyScript.CallbackParams, scope) => {
+            return params[0] > params[1];
+        }},
+        less: {type: 'func', func: (params: ClaicyScript.CallbackParams, scope) => {
+            return params[0] < params[1];
+        }},
+        boolNot: {type: 'func', func: (params: ClaicyScript.CallbackParams, scope) => {
+            return !params[0];
         }},
     }};
     /** represents a boolean, a value that can be only true or false (deprecated) */

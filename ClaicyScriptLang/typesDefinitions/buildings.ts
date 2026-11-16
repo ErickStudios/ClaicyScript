@@ -9,7 +9,7 @@ export type CSArrayInternalItems = CSBaseAllValues[];
 /** function params */
 export type CSFunctionCallbackParams = CSArrayInternalItems;
 /** function */
-export type CSFunctionCallback = (params: CSFunctionCallbackParams) => CSBaseAllValues;
+export type CSFunctionCallback = (params: CSFunctionCallbackParams, scope?: CSObjectPropertys) => CSBaseAllValues | Promise<CSBaseAllValues>;
 /** a function callable from the internal lang engine to the user code */
 export interface CSFunction extends CSValue {
     func: CSFunctionCallback;
