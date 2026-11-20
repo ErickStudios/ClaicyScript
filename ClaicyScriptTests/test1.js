@@ -1,24 +1,30 @@
 const ClaicyScript = require("./../ClaicyScriptCompiled/ClaicyScriptPacked");
 let library = ClaicyScript.exportLibrary();
 let tokens = ClaicyScript.tokenize(`
-    classfunc myIterable(len) {
-        var this = Object();
-        var __claicySmarty = Object();
-        __claicySmarty.set("iterator", func(this,index) {
-            return index;            
+// Como crear una clase adecuadamente en ClaicyScript (forma recomendada) ex: Miclase
+interface IMiclase {
+    func Self(this: IObject, miParametroString): Miclase;
+    func hacer(this: IMiclase): any;
+    var miPropiedad: string;
+}
+
+classfunc Miclase(miParametroString) extends IMiclase {
+    var thisClass = Object();
+
+    thisClass.set('Self', func(this, miParametro) { 
+        this.set('miPropiedad', miParametro);
+        this.set('hacer', func(this) {
+            print(this.miPropiedad);
         });
-        __claicySmarty.set("length", func(this) {
-            return this.len;
-        });
-        this.set("len", len);
-        this.set("__claicySmarty",__claicySmarty);
+
         return this;
-    }
-    var test = myIterable(5);
-    for x in test {
-        print(x);
-    }
-    print(repr(test));
+    });
+
+    return thisClass:Self(miParametroString);
+}
+
+var miClaseInstancia = Miclase('hola chicos');
+miClaseInstancia:hacer();
     `)
 let parsed = ClaicyScript.parse(tokens);
 (async() => {

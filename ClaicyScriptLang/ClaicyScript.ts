@@ -513,12 +513,39 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
         let props: Record<string, string> = {};
 
         while (peek() && peek().value !== "}") {
-            expect("var");
-            let propName = consume().value;
-            expect(":");
-            let typeName = consume().value;
-            if (typeof typeName === 'string') typeName = (typeName == 'String' || typeName == 'Number' || typeName == 'Boolean') ? typeName.toLowerCase() : typeName
-            expect(";");
+            let propName;
+            let typeName;
+            if (peek().value === 'var') {
+                expect("var");
+                propName = consume().value;
+                expect(":");
+                typeName = consume().value;
+                if (typeof typeName === 'string') typeName = (typeName == 'String' || typeName == 'Number' || typeName == 'Boolean') ? typeName.toLowerCase() : typeName
+                expect(";");
+            }
+            else if (peek().value === 'func') {
+                expect('func');
+                propName = consume().value;
+                expect('(');
+                while (peek() && peek().value !== ')') {
+                    if (peek().type == 'identifier') {
+                        consume();
+                        if (peek().value == ':') {
+                            expect(':');
+                            consume();
+                        }
+                        if (peek().value !== ')') 
+                            expect(',');
+                    }
+                }
+                consume();
+                if (peek().value == ':') {
+                    expect(':');
+                    consume();
+                }
+                expect(';');
+                typeName = 'any';
+            }
 
             props[propName] = typeName;
         }
