@@ -525,7 +525,8 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             }
             else if (peek().value === 'func') {
                 expect('func');
-                propName = consume().value;
+                if (peek().value == '(') propName = '_functor_';
+                else propName = consume().value;
                 expect('(');
                 while (peek() && peek().value !== ')') {
                     if (peek().type == 'identifier') {
@@ -772,7 +773,7 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                     );
                     evaluatedArgs = [...callme, callee, ...evaluatedArgs];
 
-                    return await callFunc(callee, evaluatedArgs, currentScope)
+                    return await callFunc(callee.object._functor_, evaluatedArgs, currentScope)
                 }
             }
 
@@ -906,39 +907,63 @@ export function exportLibrary(isGlobal = false) {
 ```
 var true: (extern 'js').boolean;
 var false: (extern 'js').boolean;
-type any = *;
-type true = true;
-type false = false;
-extern 'js' func createEnum(name: (extern 'js').string, allowed: (extern 'js').Array<any>);
-extern 'js' func errorAtCls(name: (extern 'js').string, msg: (extern 'js').string, before?: (extern 'js').string);
-class String extends (extern 'js').string {
-    [native code]
-    func(value: any): String;
+var any;
+var IInternal: (extern 'js').abstract;
+var IJsList: (extern 'js').Array;
+var IClaicyAst: unexplicable | unknown;
+classfunc String(v);
+classfunc Number();
+interface IArray {
+    var items: IJsList;
 }
-class Number extends (extern 'js').number {
-    [native code]
+classfunc Array() extends IArray;
+interface IUserFunction extends IInternal {
+    params: IJsList;
+    body: IClaicyAst;
+    expectatives: Array<IInterface>;
 }
-interface AdditiableValue extends (String, Number) {
-    [native code]
-    func(value: any): String | any;
+interface IFunctor extends IInternal {
+    func(params: IJsList, scope: any): any;
 }
-class Array<T> extends InternalArrayCls {
-    var items: (extern 'js').Array<T>;
-}
+var IFunction = IUserFunction | IFunctor;
 interface InternalDocsStrictEnum {
-    [native code];
-    Self(value: any);
+    allowedValues: any;
+    name: String;
+    func(value: any): IFunction;
 }
-interface Boolean extends InternalDocsStrictEnum {
-    true: true
-    false: false
+var Boolean: InternalDocsStrictEnum = InternalDocsStrictEnum(
+    true, 
+    false
+);
+interface IOperable {
+    func _add(this: ISelfLike, other: ISelfLike): ISelfLike;
+    func _sub(this: ISelfLike, other: ISelfLike): ISelfLike;
+    func _mul(this: ISelfLike, other: ISelfLike): ISelfLike;
+    func _div(this: ISelfLike, other: ISelfLike): ISelfLike;
 }
+var Numberic = Number | IOperable;
 class Math {
-    func add(a:AdditiableValue, b:AdditiableValue): AdditiableValue;
-    func sub(a:Number, b:Number): Number;
-    func div(a:Number, b:Number): Number;
-    func mul(a:Number, b:Number): Number;
+    func add(a:Numberic, b:Numberic): Numberic;
+    func sub(a:Numberic, b:Numberic): Numberic;
+    func div(a:Numberic, b:Numberic): Numberic;
+    func mul(a:Numberic, b:Numberic): Numberic;
+    func boolAnd(a: IBooleable, b: IBooleable): Boolean;
+    func boolNot(a: IBooleable, b: IBooleable): Boolean;
+    func boolOr(a: IBooleable, b: IBooleable): Boolean;
 }
+interface ITypeToolsAndChecker {
+    func valid(x: IDontKnowSelf): instanceof(x, ISelf);
+}
+interface IUserObject {
+    func set($phantomArg:This,K:String,V:any): void;
+    func get($phantomArg:This,K:String): any;
+}
+func instanceof(x: any, y: IInterface): instanceof(x, y);
+var IString: ITypeToolsAndChecker;
+var INumber: ITypeToolsAndChecker;
+var IBoolean: ITypeToolsAndChecker;
+classfunc Object(): IUserObject;
+func repr(x: any): String;
 func print(...);
 func exportToGlobal(name: String, value: any);
 func notDefined(name: String): Boolean;
@@ -949,6 +974,21 @@ func undef(name: String);
     let globalSymbols: CSObjectPropertys = {};
     globalSymbols.true = true;
     globalSymbols.false = false;
+    globalSymbols.IString = {type: 'obj', object: {
+       valid: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            return typeof params[0] === 'string';
+       }} 
+    }};
+    globalSymbols.INumber = {type: 'obj', object: {
+       valid: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            return typeof params[0] === 'number';
+       }} 
+    }};
+    globalSymbols.IBoolean = {type: 'obj', object: {
+       valid: {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+            return typeof params[0] === 'boolean';
+       }} 
+    }};
     /** represents a array a list for store things or others lists */
     globalSymbols.Array = {type: 'func', func: (params: ClaicyScript.CallbackParams) => ({
         type: 'array',
@@ -987,7 +1027,7 @@ func undef(name: String);
             if (CSTypeChecker.isCSObject(thing)) {
                 let description = "\x1b[38;5;194mObject\x1b[0m {\n";
                 for (const K in thing.object) {
-                    description += tabulated + '   ' + K + ': ' + solveToString(thing.object[K], true, tabs++) + ";\n";
+                    description += tabulated + '   ' + (K !== '_functor_' ? K + ': ' : '') + solveToString(thing.object[K], true, tabs++) + ";\n";
                 }
                 description += tabulated + "}";
                 return description;
