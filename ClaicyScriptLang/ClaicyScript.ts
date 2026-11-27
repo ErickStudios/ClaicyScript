@@ -526,27 +526,29 @@ export function parse(tokens: ({ type: string; value: string; } | { type: string
             }
             else if (peek().value === 'func') {
                 expect('func');
+                let paramTypes = [];
                 if (peek().value == '(') propName = '_functor_';
                 else propName = consume().value;
                 expect('(');
                 while (peek() && peek().value !== ')') {
                     if (peek().type == 'identifier') {
-                        consume();
+                        var namea = consume().value;
                         if (peek().value == ':') {
                             expect(':');
-                            consume();
-                        }
+                            paramTypes.push(namea + ':' + "\x1b[38;5;194m" + consume().value + "\x1b[0m");
+                        } else paramTypes.push(namea + ':' + 'any');
                         if (peek().value !== ')') 
                             expect(',');
                     }
                 }
                 consume();
+                var typeret = 'any'
                 if (peek().value == ':') {
                     expect(':');
-                    consume();
+                    typeret = consume().value;
                 }
                 expect(';');
-                typeName = 'any';
+                typeName = 'IFunctor' + `(${paramTypes.join(',')}): ${typeret}`;
             }
 
             props[propName] = typeName;
@@ -1023,7 +1025,14 @@ func undef(name: String);
                 return solveToString(thing.items);
             }
             if (CSTypeChecker.isCSInterface(thing)) {
-                return interfaceRep(thing.name || 'anonymus');
+                let header = interfaceRep(thing.name || 'anonymus');
+                let props = thing.props;
+                let reprProps = Object.entries(props as Record<string, string>).map(([k, v]) => {
+                    if (v.startsWith('IFunctor(')) 
+                        return `\x1b[38;5;161mfunc\x1b[0m \x1b[36m${k}\x1b[0m${v.substring(8)};`
+                    return `\x1b[38;5;161mvar\x1b[0m ${k}: \x1b[38;5;194m${v}\x1b[0m;`;
+                })
+                return header + '\n' + (reprProps.map(v => tabulated + '   ' + v).join('\n')) + '\x1b[0m\n}';
             }
             if (CSTypeChecker.isCSFunction(thing)) {
                 return "\x1b[38;5;161mfunc\x1b[0m(...)"
@@ -1050,7 +1059,12 @@ func undef(name: String);
                 return description;
             }
             return ((typeof thing === 'string' && re) ? "\x1b[32m'" : '') + String(thing) + ((typeof thing === 'string' && re) ? "'\x1b[0m" : '');
-        }; return solveToString(params[0]);
+        }; 
+        const result = solveToString(params[0]);
+
+        return typeof window !== 'undefined'
+            ? String(result).replace(/\x1b\[[0-?]*[ -/]*m/g, '')
+            : result;
     }}
     /** prints one or varius values */
     globalSymbols.print = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
