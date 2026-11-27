@@ -18,7 +18,7 @@ export interface CSFunction extends CSValue {
 export interface CSObject extends CSValue {
     object: CSObjectPropertys;
     classesHeredated?: CSBaseAllValues[];
-    interfaces?: CSBaseAllValues[];
+    interfaces?: CSInterface[];
 }
 /** a array, a list of enumerable things, from index start 0. 0... 1... 2... to the infinity */
 export interface CSArray extends CSValue {

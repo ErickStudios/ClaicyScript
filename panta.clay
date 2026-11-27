@@ -1,0 +1,9 @@
+
+var Module = Object();
+Module.set("Exports", Object());
+
+interface ixa {
+
+}
+
+Module.Exports.set("ixa", ixa);

@@ -1,5 +1,6 @@
 /** ClaicyScript interpreter v1.1 */
 import { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback } from "./typesDefinitions/buildings"
+export { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback };
 /** a member node, a access to node */
 type MemberNode = {
     type: "Member";
@@ -654,7 +655,9 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                             let iface = globalSymbols[ifaceName] || localScope[ifaceName];
 
                             if (CSTypeChecker.isCSObject(result)) {
-                                result.interfaces?.push(iface);
+                                if (CSTypeChecker.isCSInterface(iface)) {
+                                    result.interfaces?.push(iface);
+                                }
                             }
 
                             if (typeof iface !== 'object') throw new Error("The interface is not a object");
@@ -957,6 +960,7 @@ interface ITypeToolsAndChecker {
 interface IUserObject {
     func set($phantomArg:This,K:String,V:any): void;
     func get($phantomArg:This,K:String): any;
+    func has($phantomArg:This,K:String): K in This;
 }
 func instanceof(x: any, y: IInterface): instanceof(x, y);
 var IString: ITypeToolsAndChecker;
@@ -1009,6 +1013,9 @@ func undef(name: String);
     globalSymbols.repr = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
         let solveToString: (thing: any, re?: boolean, tabs?: number) => string = (thing: any, re=false, tabs=0) => {
             let tabulated = "   ".repeat(tabs);
+            if (typeof thing === "undefined" || thing == null) {
+                return '\x1b[38;5;194mINone\x1b[0m';
+            }
             if (Array.isArray(thing)) {
                 return "[" + thing.map(v => solveToString(v)).join(",") + "]";
             }
@@ -1025,7 +1032,17 @@ func undef(name: String);
                 return "\x1b[38;5;161mfunc\x1b[0m(...)"
             }
             if (CSTypeChecker.isCSObject(thing)) {
-                let description = "\x1b[38;5;194mObject\x1b[0m {\n";
+                let inta = thing.interfaces ?? [];
+                let mv = inta.map(v => {
+                    return interfaceRep(v.name ?? 'anonymus');
+                });
+                let nat = (
+                    mv.length == 0 ? '' :
+                    mv.length == 1 ? inta[0] + ' ' :
+                    ('(' + mv.join(', ') + ')') + ' '
+                )
+
+                let description = `\x1b[38;5;194mObject\x1b[0m ${nat}{\n`;
                 for (const K in thing.object) {
                     description += tabulated + '   ' + (K !== '_functor_' ? K + ': ' : '') + solveToString(thing.object[K], true, tabs++) + ";\n";
                 }
@@ -1158,6 +1175,14 @@ func undef(name: String);
                     // packageGet
                     if (typeof params[0] !== 'string') throw new Error("Not allowed");
                     return object.object[params[0]] as ClaicyScript.BaseAllValues;
+                }
+            };
+            // package
+            object.object.has = {
+                type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+                    // packageGet
+                    if (typeof params[0] !== 'string') throw new Error("Not allowed");
+                    return params[0] in object.object as ClaicyScript.Bool;
                 }
             };
             return object as ClaicyScript.Object;
