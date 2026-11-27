@@ -1017,7 +1017,7 @@ func undef(name: String);
                 return '\x1b[38;5;194mINone\x1b[0m';
             }
             if (Array.isArray(thing)) {
-                return "[" + thing.map(v => solveToString(v)).join(",") + "]";
+                return "[" + thing.map(v => solveToString(v, true, tabs)).join(",") + "]";
             }
             if (CSTypeChecker.isCSArray(thing)) {
                 return solveToString(thing.items);

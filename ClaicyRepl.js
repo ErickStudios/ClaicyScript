@@ -4,7 +4,8 @@ const readline = require('node:readline/promises');
 const path = require("node:path");
 
 let args = argv.slice(2);
-let cwda = args[0] ? path.dirname(path.resolve(cwd(), args[0])) : cwd();
+let dirfile = args[0] ? path.resolve(cwd(), args[0]) : null;
+let cwda = dirfile ? path.dirname(dirfile) : cwd();
 
 // Configuration for ClaicyScript REPL
 var rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -30,7 +31,19 @@ env.import = {type:'func', async func([moduleName]) {
         }} // fs.existsFile(name: String): Boolean;
         return moduleExports;
     }
-    
+    else if (moduleName == 'meta' || moduleName == 'clay::meta') {
+        let moduleExports = {type:'obj', object: {}};
+        moduleExports.object.IMeta = {type: 'obj', object: {
+            _functor_: {type: 'func', func([ta, name]) {
+                if (name == 'import.meta') return cwda;
+                if (name == 'this.meta') return dirfile ?? 'clay::tmp::repl.clay';
+                return path.join(cwda, (name.endsWith('.clay') ? name : name + '.clay').replaceAll('/', path.sep));
+            }}, // func(uri: string): IMeta;
+            cwd: cwda, // var cwd: IMeta;
+            args: { type: 'array', items: argv }
+        }} // interface IMeta { ... } & type IMeta = String;
+        return moduleExports;
+    }
     const fs = require("node:fs");
     const modu = fs.readFileSync(path.join(cwda, (moduleName.endsWith('.clay') ? moduleName : moduleName + '.clay').replaceAll('/', path.sep)), 'ascii');
     const a = await ClaicyLang.run(warpClaicy(modu), env);
@@ -47,6 +60,7 @@ env.import = {type:'func', async func([moduleName]) {
 }};
 
 async function startRepl() {
+    console.log('ClayNode.clay - ClaicyScript REPL')
     try {
         while (true) {
             let line = await rl.question("> ");
@@ -92,4 +106,7 @@ async function startRepl() {
     }
 }
 
-void startRepl();
+if (args.length >= 1) {
+
+}
+else void startRepl();
