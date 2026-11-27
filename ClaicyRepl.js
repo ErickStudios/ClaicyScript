@@ -16,6 +16,21 @@ function warpClaicy(code) {
     return ClaicyLang.parse(ClaicyLang.tokenize(code));
 }
 
+function makerInterfacesFunctorsDescriptors(params, typa) {
+    return 'IFunctor(' + (params.map(([name, typea]) => name + ':' + "\x1b[38;5;194m" + typea + "\x1b[0m").join(', ')) + '): ' + typa;
+}
+
+function validerStrictly(object) {
+    if (object.interfaces) {
+        for (const i of object.interfaces) {
+            if (!env.instanceof.func([object, i]))
+                throw new Error('the creator of that dont remember some method');
+        }
+    }
+
+    return object;
+}
+
 env.import = {type:'func', async func([moduleName]) {
     if (moduleName == 'fs' || moduleName == 'clay::fs') {
         let moduleExports = {type:'obj', object: {}};
@@ -29,6 +44,101 @@ env.import = {type:'func', async func([moduleName]) {
         moduleExports.object.existsFile = {type: 'func', func([name]) {
             return internal.existsSync(name, 'ascii');
         }} // fs.existsFile(name: String): Boolean;
+        return moduleExports;
+    }
+    if (moduleName == 'flatlist' || moduleName == 'clay::flatlist') {
+        let moduleExports = {type:'obj', object: {}};
+        moduleExports.object.IArrayBuffer = {type: 'interface', name: 'IArrayBuffer',  props: {
+            ITEM_SIZE: 'number',
+            length: 'number',
+            slice: makerInterfacesFunctorsDescriptors([
+                ['start', 'Number | IIndexLike'],
+                ['end', 'Number | IIndexLike'],
+            ], 'number'),
+            at: makerInterfacesFunctorsDescriptors([
+                ['position', 'Number | IIndexLike']
+            ], 'number')
+        }}; // interface IArrayBuffer
+        moduleExports.object.IBufferLike = {type: 'interface', name: 'IBufferLike', props: {
+            ...moduleExports.object.IArrayBuffer.props,
+            set: makerInterfacesFunctorsDescriptors([
+                ['position', 'Number | IIndexLike'],
+                ['value', 'Number & ISelfSizeof']
+            ], 'number'),
+        }}; // interface IBufferLike extends IArrayBuffer
+        moduleExports.object.IValidBufferSizeof = ClaicyLang.createEnum('IValidBufferSizeof', [
+            1,2,4,8
+        ]); // interface IValidBufferSizeof extends InternalDocsStrictEnum {}
+        moduleExports.object.ArrayBuffer = {type: 'func',func: ([lena, bytesSizea]) => {
+                let arrayDefault;
+                let bytesSize = bytesSizea;
+
+                if (ClaicyLang.CSTypeChecker.isCSArray(lena)) {
+                    arrayDefault = lena.items;
+                }
+                else if (env.instanceof.func([lena, moduleExports.object.IArrayBuffer])) {
+                    arrayDefault = lena.object.__array__;
+                    bytesSize = lena.object.ITEM_SIZE;
+                }
+
+                let len = arrayDefault?.length ?? lena;
+
+                let obj = {
+                    type: 'obj',
+                    object: {}
+                };
+
+                const bytesSize_valid = moduleExports.object.IValidBufferSizeof.func([bytesSize]);
+
+                const cls = {
+                    1: Uint8Array,
+                    2: Uint16Array,
+                    4: Uint32Array,
+                    8: BigUint64Array
+                };
+
+                if (!Number.isSafeInteger(len) || len < 0) {
+                    throw new TypeError('Invalid buffer length');
+                }
+
+                const TypedArray = cls[bytesSize_valid];
+                const inta_array = arrayDefault !== undefined
+                                ? new TypedArray(arrayDefault)
+                                : new TypedArray(len);
+
+                obj.object.__array__ = inta_array;
+                obj.object.__ctr__ = moduleExports.object.ArrayBuffer;
+                obj.object.ITEM_SIZE = bytesSize_valid;
+                obj.object.length = len;
+                obj.object.slice = {type: 'func', func([start, end]) {
+                    let cat = obj.object.__ctr__.func([obj]);
+                    cat.object.__array__ = cat.object.__array__.slice(start, end)
+                    return cat;
+                }}
+                obj.object.at = {type: 'func', func([index]) {
+                    return obj.object.__array__.at(index)
+                }}
+
+                obj.interfaces = [
+                    moduleExports.object.IArrayBuffer
+                ]
+
+                return validerStrictly(obj);
+            }
+        }; // classfunc ArrayBufferLike
+        moduleExports.object.BufferLike = {type: 'func', func: ([a, bytesSize]) => {
+            let cat = moduleExports.object.ArrayBuffer.func([a, bytesSize]);
+            cat.object.__ctr__ = moduleExports.object.BufferLike;
+            cat.interfaces.push(moduleExports.object.IBufferLike);
+
+            cat.object.set = { type: 'func', func: ([index, item]) => {
+                cat.object.__array__[index] = item;
+                return true;
+            } }
+
+            return validerStrictly(cat);
+        }}
+
         return moduleExports;
     }
     else if (moduleName == 'meta' || moduleName == 'clay::meta') {
@@ -85,11 +195,11 @@ async function startRepl() {
                 const ex = await ClaicyLang.run(ast, env);
                 const count = Object.entries(ex ?? {}).length;
                 if (count === 0) {
-                    console.log(env.repr.func([undefined]));
+                    console.log(await env.repr.func([undefined]));
                 }
                 else {
                     for (const [k, v] of Object.entries(ex)) {
-                        console.log((count != 1 ? `${k}:` : '') + env.repr.func([v]));
+                        console.log((count != 1 ? `${k}:` : '') + await env.repr.func([v]));
                     }
                 }
                 for (const [k, v] of Object.entries(ex)) {

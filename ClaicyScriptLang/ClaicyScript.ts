@@ -1,5 +1,5 @@
 /** ClaicyScript interpreter v1.1 */
-import { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback } from "./typesDefinitions/buildings"
+import { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback, CSObject } from "./typesDefinitions/buildings"
 export { CSPropertyNameType, CSObjectPropertys, ClaicyScript, CSFunctionCallback };
 /** a member node, a access to node */
 type MemberNode = {
@@ -681,7 +681,6 @@ export async function run(ast: any[], globalSymbolsP: CSObjectPropertys, makeOne
                                     );
                                 }
 
-                                // (opcional) validar tipo
                                 let expectedType = iface.props[prop];
                                 let value = result.object[prop];
 
@@ -916,7 +915,17 @@ var any;
 var IInternal: (extern 'js').abstract;
 var IJsList: (extern 'js').Array;
 var IClaicyAst: unexplicable | unknown;
-classfunc String(v);
+interface IStringMod {
+    func _repr(this: ISelfLike): String;
+    func _add(this: ISelfLike, other: ISelfLike): ISelfLike;
+    func _div(this: ISelfLike, other: ISelfLike): ISelfLike;
+    func replaceFirst(search: ISelfLike | String, replacer: ISelfLike | String): String;
+    func replaceAll(search: ISelfLike | String, replacer: ISelfLike | String): String;
+    func search(query: ISelfLike | String): Number;
+    func subChain(start: Number, end: Number): String;
+    func split(divider: ISelfLike | String): String;
+}
+classfunc String(v, modeable: Boolean | INone): String | IStringMod;
 classfunc Number();
 interface IArray {
     var items: IJsList;
@@ -1012,27 +1021,30 @@ func undef(name: String);
         return createEnum(enumName, allowedValues) as ClaicyScript.Function;
     }};
     /** gets the representation of a thing */
-    globalSymbols.repr = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
-        let solveToString: (thing: any, re?: boolean, tabs?: number) => string = (thing: any, re=false, tabs=0) => {
+    globalSymbols.reprBare = {type: 'func', func: async (params: ClaicyScript.CallbackParams, scope: CSObjectPropertys = {}) => {
+        let ignoreReprMethods = params[0] ?? false;
+        let solveToString: (thing: any, re?: boolean, tabs?: number) => Promise<string> = async (thing: any, re=false, tabs=0) => {
             let tabulated = "   ".repeat(tabs);
             if (typeof thing === "undefined" || thing == null) {
                 return '\x1b[38;5;194mINone\x1b[0m';
             }
             if (Array.isArray(thing)) {
-                return "[" + thing.map(v => solveToString(v, true, tabs)).join(",") + "]";
+                return "[" + (await Promise.all(
+                    thing.map(v => solveToString(v, true, tabs))
+                )).join(",") + "]";
             }
             if (CSTypeChecker.isCSArray(thing)) {
-                return solveToString(thing.items);
+                return await solveToString(thing.items);
             }
             if (CSTypeChecker.isCSInterface(thing)) {
-                let header = interfaceRep(thing.name || 'anonymus');
+                let header = interfaceRep(thing.name || '') + ' {';
                 let props = thing.props;
                 let reprProps = Object.entries(props as Record<string, string>).map(([k, v]) => {
                     if (v.startsWith('IFunctor(')) 
                         return `\x1b[38;5;161mfunc\x1b[0m \x1b[36m${k}\x1b[0m${v.substring(8)};`
                     return `\x1b[38;5;161mvar\x1b[0m ${k}: \x1b[38;5;194m${v}\x1b[0m;`;
                 })
-                return header + '\n' + (reprProps.map(v => tabulated + '   ' + v).join('\n')) + '\x1b[0m\n}';
+                return header + '\n' + (reprProps.map(v => tabulated + '   ' + v).join('\n')) + '\x1b[0m\n' + tabulated + '}';
             }
             if (CSTypeChecker.isCSFunction(thing)) {
                 return "\x1b[38;5;161mfunc\x1b[0m(...)"
@@ -1041,34 +1053,46 @@ func undef(name: String);
                 return "\x1b[38;5;161mfunc\x1b[0m(...)"
             }
             if (CSTypeChecker.isCSObject(thing)) {
+                if ('_repr' in thing.object && (
+                    CSTypeChecker.isCSUserFunction(thing.object._repr) ||
+                    CSTypeChecker.isCSFunction(thing.object._repr) && !ignoreReprMethods
+                )) {
+                    let functorRepr = thing.object._repr;
+                    let fnRun = (await run([], {}, true)).callFunc;
+
+                    return (await fnRun(functorRepr, [thing], scope)) as string;
+                }
                 let inta = thing.interfaces ?? [];
                 let mv = inta.map(v => {
                     return interfaceRep(v.name ?? 'anonymus');
                 });
                 let nat = (
                     mv.length == 0 ? '' :
-                    mv.length == 1 ? inta[0] + ' ' :
+                    mv.length == 1 ? mv[0] + ' ' :
                     ('(' + mv.join(', ') + ')') + ' '
                 )
 
                 let description = `\x1b[38;5;194mObject\x1b[0m ${nat}{\n`;
                 for (const K in thing.object) {
-                    description += tabulated + '   ' + (K !== '_functor_' ? K + ': ' : '') + solveToString(thing.object[K], true, tabs++) + ";\n";
+                    description += tabulated + '   ' + (K !== '_functor_' ? K + ': ' : '') + await solveToString(thing.object[K], true, tabs+1) + ";\n";
                 }
                 description += tabulated + "}";
                 return description;
             }
             return ((typeof thing === 'string' && re) ? "\x1b[32m'" : '') + String(thing) + ((typeof thing === 'string' && re) ? "'\x1b[0m" : '');
         }; 
-        const result = solveToString(params[0]);
+        const result = await solveToString(params[1]);
 
         return typeof window !== 'undefined'
             ? String(result).replace(/\x1b\[[0-?]*[ -/]*m/g, '')
             : result;
     }}
+    globalSymbols.repr = { type: 'func', func: async (params: ClaicyScript.CallbackParams, scope) => {
+        return (globalSymbols.reprBare as ClaicyScript.Function).func([false, params[0]]);
+    } }
     /** prints one or varius values */
-    globalSymbols.print = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
-        console.log(...(params.map(v => (globalSymbols.repr as ClaicyScript.Function).func([v]))));
+    globalSymbols.print = {type: 'func', func: async (params: ClaicyScript.CallbackParams) => {
+        console.log(...(await params.map(async v => await (globalSymbols.repr as ClaicyScript.Function).func([v]))));
         return 0 as ClaicyScript.Number;
     }};
     const casterForUserFast = async (search: string, params: ClaicyScript.CallbackParams, scope?: CSObjectPropertys) =>{
@@ -1160,6 +1184,22 @@ func undef(name: String);
     globalSymbols.boolean = globalSymbols.Boolean; // new method for create booleans
     /** represents a string, a value that contains text (deprecated) */
     globalSymbols.String = {type: 'func', func: (params: ClaicyScript.CallbackParams) => {
+        if (params.length >= 2) {
+            if (params[1] == true) {
+                let str = params[0];
+                let prep: CSObject = {type: 'obj', object: {
+                    _repr: { type: 'func', func: () => str },
+                    replaceFirst: {type: 'func', func: ([a, b]: ClaicyScript.CallbackParams) => String(str).replace(a as string, b as string)},
+                    replaceAll: {type: 'func', func: ([a, b]: ClaicyScript.CallbackParams) => String(str).replaceAll(a as string, b as string)},
+                    search: {type: 'func', func: ([a]: ClaicyScript.CallbackParams) => String(str).search(a as string)},
+                    subChain: {type: 'func', func: ([start, end]: ClaicyScript.CallbackParams) => String(str).slice(Number(start), Number(end))},
+                    split: {type: 'func', func: ([withW]: ClaicyScript.CallbackParams) => ({ type: 'array', items: String(str).split(String(withW)) })},
+                    _add: {type: 'func', func: ([these, s]) => str + String(s)}
+                }};
+                prep.object._div = prep.object.split;
+                return prep;
+            }
+        }
         return String(params[0]) as ClaicyScript.String;
     }}
     /** represents a string, a value that contains text */
@@ -1248,6 +1288,22 @@ func undef(name: String);
         // interfaces
         if (Array.isArray(target.interfaces)) {
             for (let iface of target.interfaces) {
+                for (let prop in iface.props) {
+                    if (!(prop in target.object)) {
+                        return false;
+                    }
+
+                    let expectedType = iface.props[prop];
+                    let value = target.object[prop];
+
+                    if (expectedType === "number" && typeof value !== "number") {
+                        return false
+                    }
+
+                    if (expectedType === "string" && typeof value !== "string") {
+                        return false;
+                    }
+                }
                 if (CSTypeChecker.isCSInterface(iface) && CSTypeChecker.isCSInterface(source) && (iface.name === source.name)) return true;
             }
         }

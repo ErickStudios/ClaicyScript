@@ -32,7 +32,7 @@ export interface CSUserFunction extends CSValue {
 }
 /** a interface, a pact that the codes makes with a class and a base */
 export interface CSInterface extends CSValue {
-    props: any;
+    props: Record<string, string>;
     name?: CSString;
 }
 /** exports the required things */
